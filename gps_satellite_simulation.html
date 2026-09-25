@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Simulação GPS por Satélites</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #0b1020;
+    color: #f5f7ff;
+    min-height: 100vh;
+  }
+  .wrap {
+    max-width: 1050px;
+    margin: auto;
+    padding: 24px 16px 40px;
+  }
+  h1 { margin: 0 0 8px; font-size: clamp(28px, 5vw, 46px); }
+  .subtitle { color: #aeb8d4; margin-bottom: 22px; }
+  .card {
+    background: #151c31;
+    border: 1px solid #2a3555;
+    border-radius: 20px;
+    padding: 18px;
+    box-shadow: 0 15px 45px rgba(0,0,0,.25);
+  }
+  .diagram {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    min-height: 420px;
+    overflow: hidden;
+    border-radius: 16px;
+    background:
+      radial-gradient(circle at center, rgba(75,110,255,.13), transparent 35%),
+      linear-gradient(135deg, #11182b, #0b1222);
+  }
+  .orbit {
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 70%; height: 76%;
+    transform: translate(-50%,-50%);
+    border: 1px dashed rgba(145,165,220,.25);
+    border-radius: 50%;
+  }
+  .signal {
+    position: absolute;
+    height: 2px;
+    transform-origin: left center;
+    border-top: 2px dashed #7da7ff;
+    opacity: .15;
+    transition: opacity .35s, filter .35s;
+  }
+  .signal.active {
+    opacity: 1;
+    filter: drop-shadow(0 0 5px #7da7ff);
+    animation: pulse 1s linear infinite;
+  }
+  @keyframes pulse {
+    50% { opacity: .45; }
+  }
+  .sat {
+    position: absolute;
+    width: 82px;
+    height: 82px;
+    transform: translate(-50%,-50%);
+    display: grid;
+    place-items: center;
+    z-index: 3;
+  }
+  .sat .body {
+    width: 34px; height: 24px;
+    border-radius: 5px;
+    background: #d7e0f2;
+    border: 2px solid #7787aa;
+    position: relative;
+  }
+  .sat .body:before, .sat .body:after {
+    content: "";
+    position: absolute;
+    width: 22px; height: 13px;
+    top: 4px;
+    background: #4d7cff;
+    border: 1px solid #9db7ff;
+  }
+  .sat .body:before { right: 30px; }
+  .sat .body:after { left: 30px; }
+  .sat .antenna {
+    position: absolute;
+    width: 3px; height: 17px;
+    background: #d7e0f2;
+    top: 10px; left: 39px;
+  }
+  .label {
+    position: absolute;
+    top: 67px;
+    white-space: nowrap;
+    font-weight: 700;
+    font-size: 13px;
+    color: #fff;
+    text-shadow: 0 2px 5px #000;
+  }
+  .receiver {
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    position: absolute;
+    left: 50%; top: 52%;
+    transform: translate(-50%,-50%);
+    width: 110px; height: 110px;
+    border-radius: 50%;
+    background: rgba(45, 70, 135, .35);
+    border: 2px solid #7da7ff;
+    display: grid;
+    place-items: center;
+    z-index: 4;
+    box-shadow: 0 0 35px rgba(90,130,255,.28);
+  }
+  .phone {
+    width: 43px; height: 68px;
+    border: 3px solid white;
+    border-radius: 8px;
+    position: relative;
+    background: #18233e;
+  }
+  .phone:after {
+    content: "";
+    position: absolute;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: white;
+    left: 50%; bottom: 4px;
+    transform: translateX(-50%);
+  }
+  .receiver.dragging { cursor: grabbing; }
+
+  .timer {
+    margin-top: 14px;
+    background: #0d1426;
+    border: 1px solid #344364;
+    border-radius: 14px;
+    padding: 13px 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 15px;
+    flex-wrap: wrap;
+  }
+  .timer strong { font-size: 20px; color: #dce6ff; }
+  .timer small { color: #9eacd0; }
+
+  .receiver-label {
+    position: absolute;
+    top: 115px;
+    white-space: nowrap;
+    font-weight: 700;
+    font-size: 13px;
+  }
+  .distance {
+    position: absolute;
+    transform: translate(-50%,-50%);
+    padding: 5px 8px;
+    border-radius: 8px;
+    background: rgba(11,16,32,.86);
+    border: 1px solid #344364;
+    color: #bcd0ff;
+    font-size: 12px;
+    font-weight: bold;
+    z-index: 5;
+  }
+  .controls {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+  }
+  button {
+    border: 0;
+    border-radius: 12px;
+    padding: 12px 17px;
+    font-weight: 700;
+    cursor: pointer;
+    background: #3565e8;
+    color: white;
+  }
+  button.secondary { background: #293550; }
+  button:hover { filter: brightness(1.12); }
+  .info {
+    margin-top: 16px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+  .info div {
+    background: #10172a;
+    border: 1px solid #293654;
+    border-radius: 14px;
+    padding: 14px;
+  }
+  .info b { display:block; margin-bottom: 5px; }
+  .info span { color:#aeb8d4; font-size: 14px; line-height:1.4; }
+  .status {
+    margin-top: 14px;
+    color: #bcd0ff;
+    min-height: 22px;
+    font-weight: 600;
+  }
+  @media (max-width: 700px) {
+    .diagram { min-height: 350px; }
+    .info { grid-template-columns: 1fr; }
+    .sat { transform: translate(-50%,-50%) scale(.85); }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🛰️ Como o GPS encontra sua posição</h1>
+  <div class="subtitle">Uma simulação baseada no seu esboço: 4 satélites enviam sinais até um receptor.</div>
+
+  <div class="card">
+    <div class="diagram" id="diagram">
+      <div class="orbit"></div>
+
+      <div class="sat" id="s1" style="left:84%;top:22%;">
+        <div class="body"><div class="antenna"></div></div>
+        <div class="label">Satélite 1</div>
+      </div>
+
+      <div class="sat" id="s2" style="left:84%;top:78%;">
+        <div class="body"><div class="antenna"></div></div>
+        <div class="label">Satélite 2</div>
+      </div>
+
+      <div class="sat" id="s3" style="left:16%;top:78%;">
+        <div class="body"><div class="antenna"></div></div>
+        <div class="label">Satélite 3</div>
+      </div>
+
+      <div class="sat" id="s4" style="left:16%;top:22%;">
+        <div class="body"><div class="antenna"></div></div>
+        <div class="label">Satélite 4</div>
+      </div>
+
+      <div class="receiver">
+        <div class="phone"></div>
+        <div class="receiver-label">📍 Receptor GPS</div>
+      </div>
+
+      <div class="distance" id="d1">0,164</div>
+      <div class="distance" id="d2">0,204</div>
+      <div class="distance" id="d3">0,410</div>
+      <div class="distance" id="d4">0,305</div>
+    </div>
+
+    <div class="controls">
+      <button onclick="startSimulation()">▶ Iniciar simulação</button>
+      <button class="secondary" onclick="showStep()">➡ Próxima etapa</button>
+      <button class="secondary" onclick="resetSimulation()">↺ Reiniciar</button>
+    </div>
+
+    <div class="status" id="status">
+      Arraste o 📍 pelo quadro para mudar a localização do receptor. Depois inicie a simulação.
+    </div>
+
+    <div class="timer">
+      <div>
+        <small>Tempo do sinal mais rápido</small><br>
+        <strong id="timeDisplay">0,000 ms</strong>
+      </div>
+      <div>
+        <small>Velocidade do sinal</small><br>
+        <strong>≈ 300.000 km/s</strong>
+      </div>
+      <div>
+        <small>Distância aproximada</small><br>
+        <strong id="distanceDisplay">—</strong>
+      </div>
+    </div>
+
+    <div class="info">
+      <div>
+        <b>🛰️ 1. Os satélites enviam sinais</b>
+        <span>Os satélites GPS ficam orbitando a Terra e enviam continuamente sinais de rádio. Esses sinais informam a posição do satélite e o instante exato em que o sinal foi enviado.</span>
+      </div>
+      <div>
+        <b>⏱️ 2. O receptor mede o tempo</b>
+        <span>O celular recebe o sinal e compara o horário em que ele foi enviado com o horário em que chegou. Como o sinal viaja quase à velocidade da luz, o tempo permite calcular a distância até cada satélite.</span>
+      </div>
+      <div>
+        <b>📍 3. As distâncias formam a posição</b>
+        <span>Uma única distância não indica exatamente onde você está. Ao comparar as distâncias de vários satélites, as possíveis posições vão sendo reduzidas até chegar à localização do receptor. Na prática, pelo menos 4 satélites são usados para uma solução completa.</span>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px; background:#10172a;">
+      <h2 style="margin:4px 0 10px;">Como esta simulação funciona?</h2>
+      <p style="color:#aeb8d4; line-height:1.6; margin:0 0 10px;">
+        <b style="color:#fff;">1.</b> Arraste o 📍 para mudar a localização do receptor.
+        <br><b style="color:#fff;">2.</b> Observe que as distâncias até os quatro satélites mudam.
+        <br><b style="color:#fff;">3.</b> O tempo mostrado também muda, porque quanto maior a distância, maior é o tempo que o sinal leva para chegar.
+        <br><b style="color:#fff;">4.</b> Clique em <b style="color:#fff;">“Iniciar simulação”</b> para ver os sinais chegando um por um.
+        <br><b style="color:#fff;">5.</b> Com vários sinais, o receptor consegue determinar sua posição.
+      </p>
+      <p style="color:#9eacd0; font-size:13px; line-height:1.5; margin:0;">
+        <b>Importante:</b> este é um modelo didático. As distâncias e posições do desenho são representadas em uma escala simplificada para facilitar a compreensão. O GPS real usa medições extremamente precisas do tempo, órbitas dos satélites e outros cálculos para determinar a posição.
+      </p>
+    </div>
+  </div>
+</div>
+
+<script>
+const satIds = ["s1","s2","s3","s4"];
+const SPEED_KM_S = 299792.458;
+let step = 0;
+let timer = null;
+let dragging = false;
+
+function centerOf(el) {
+  const r = el.getBoundingClientRect();
+  const p = document.getElementById("diagram").getBoundingClientRect();
+  return {x:r.left+r.width/2-p.left, y:r.top+r.height/2-p.top};
+}
+
+function makeSignals() {
+  document.querySelectorAll(".signal").forEach(e => e.remove());
+  const diagram = document.getElementById("diagram");
+  const receiver = centerOf(document.querySelector(".receiver"));
+
+  satIds.forEach((id,i) => {
+    const sat = centerOf(document.getElementById(id));
+    const line = document.createElement("div");
+    line.className = "signal";
+    const dx = receiver.x - sat.x;
+    const dy = receiver.y - sat.y;
+    const length = Math.sqrt(dx*dx+dy*dy);
+    const angle = Math.atan2(dy,dx) * 180 / Math.PI;
+    line.style.left = sat.x + "px";
+    line.style.top = sat.y + "px";
+    line.style.width = length + "px";
+    line.style.transform = `rotate(${angle}deg)`;
+    line.dataset.index = i;
+    diagram.appendChild(line);
+  });
+  updateDistances();
+}
+
+function updateDistances() {
+  const receiver = centerOf(document.querySelector(".receiver"));
+  let distances = [];
+
+  satIds.forEach((id,i) => {
+    const sat = centerOf(document.getElementById(id));
+    const dx = receiver.x - sat.x;
+    const dy = receiver.y - sat.y;
+    const px = Math.sqrt(dx*dx + dy*dy);
+
+    // Escala didática: 1 px representa 10 km.
+    const km = px * 10;
+    distances.push(km);
+
+    const label = document.getElementById("d"+(i+1));
+    label.textContent = km.toFixed(0) + " km";
+
+    // Coloca o rótulo aproximadamente no meio da linha.
+    label.style.left = ((receiver.x + sat.x)/2) + "px";
+    label.style.top = ((receiver.y + sat.y)/2) + "px";
+  });
+
+  const minKm = Math.min(...distances);
+  const milliseconds = (minKm / SPEED_KM_S) * 1000;
+  document.getElementById("timeDisplay").textContent =
+    milliseconds.toFixed(3) + " ms";
+  document.getElementById("distanceDisplay").textContent =
+    minKm.toFixed(0) + " km";
+}
+
+function activate(i) {
+  const lines = [...document.querySelectorAll(".signal")];
+  lines.forEach((line,j) => line.classList.toggle("active", j <= i));
+
+  if (i < 0) {
+    document.getElementById("status").textContent =
+      "Arraste o 📍 pelo quadro para mudar a localização do receptor. Depois inicie a simulação.";
+    return;
+  }
+
+  document.getElementById("status").textContent =
+    `Sinal do Satélite ${i+1} recebido. O receptor mede o tempo que o sinal levou para chegar.`;
+
+  if (i === 3) {
+    document.getElementById("status").textContent =
+      "✓ Quatro sinais recebidos! O receptor usa as distâncias medidas para calcular sua posição.";
+  }
+}
+
+function showStep() {
+  if (step >= 4) step = 0;
+  activate(step);
+  step++;
+}
+
+function startSimulation() {
+  clearInterval(timer);
+  step = 0;
+  activate(-1);
+
+  timer = setInterval(() => {
+    if (step >= 4) {
+      clearInterval(timer);
+      return;
+    }
+    activate(step++);
+  }, 900);
+}
+
+function resetSimulation() {
+  clearInterval(timer);
+  step = 0;
+  document.querySelectorAll(".signal").forEach(e => e.classList.remove("active"));
+  document.getElementById("status").textContent =
+    "Arraste o 📍 pelo quadro para mudar a localização do receptor. Depois inicie a simulação.";
+}
+
+function moveReceiver(clientX, clientY) {
+  const diagram = document.getElementById("diagram");
+  const receiver = document.querySelector(".receiver");
+  const r = diagram.getBoundingClientRect();
+
+  let x = clientX - r.left;
+  let y = clientY - r.top;
+
+  const marginX = 65;
+  const marginY = 65;
+
+  x = Math.max(marginX, Math.min(r.width - marginX, x));
+  y = Math.max(marginY, Math.min(r.height - marginY, y));
+
+  receiver.style.left = (x / r.width * 100) + "%";
+  receiver.style.top = (y / r.height * 100) + "%";
+
+  makeSignals();
+  document.querySelectorAll(".signal").forEach(e => e.classList.remove("active"));
+  step = 0;
+  document.getElementById("status").textContent =
+    "Localização alterada! Agora as distâncias e o tempo de chegada dos sinais mudaram.";
+}
+
+const receiver = document.querySelector(".receiver");
+
+receiver.addEventListener("pointerdown", (e) => {
+  dragging = true;
+  receiver.classList.add("dragging");
+  receiver.setPointerCapture(e.pointerId);
+  e.preventDefault();
+});
+
+receiver.addEventListener("pointermove", (e) => {
+  if (dragging) moveReceiver(e.clientX, e.clientY);
+});
+
+receiver.addEventListener("pointerup", () => {
+  dragging = false;
+  receiver.classList.remove("dragging");
+});
+
+receiver.addEventListener("pointercancel", () => {
+  dragging = false;
+  receiver.classList.remove("dragging");
+});
+
+window.addEventListener("load", makeSignals);
+window.addEventListener("resize", makeSignals);
+</script>
+</body>
+</html>
